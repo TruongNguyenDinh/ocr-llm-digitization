@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 
+MAX_DESKEW_ANGLE = 15.0
+
 
 def estimate_skew_angle(
     image: np.ndarray,
@@ -35,6 +37,12 @@ def estimate_skew_angle(
         angle = -(90 + angle)
     else:
         angle = -angle
+    # A document deskew operation corrects small capture skew.
+    # Angles near 90 degrees mean minAreaRect selected the page
+    # orientation, not the baseline angle, and would crop the page.
+    if abs(angle) > MAX_DESKEW_ANGLE:
+        return 0.0
+
 
     return float(angle)
 

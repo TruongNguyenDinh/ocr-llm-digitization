@@ -5,10 +5,10 @@ from .engine import OCREngine
 from .postprocess import normalize_result
 from .reading_order import sort_reading_order
 
+
 class OCRPipeline:
 
     def __init__(self):
-
         self.engine = OCREngine()
 
     def process_document(
@@ -17,7 +17,9 @@ class OCRPipeline:
         output_path: str,
     ):
 
-        document_dir = Path(document_dir)
+        document_dir = Path(
+            document_dir
+        )
 
         page_images = sorted(
             document_dir.glob(
@@ -46,31 +48,37 @@ class OCRPipeline:
             blocks = normalize_result(
                 raw_result
             )
+
             blocks = sort_reading_order(
                 blocks
             )
 
-        pages.append(
-            {
-                "page": page_number,
-                "blocks": [
-                    {
-                        "text": block.text,
-                        "confidence": block.confidence,
-                        "bbox": block.bbox,
-                        "reading_order": block.reading_order,
-                    }
-                    for block in blocks
-                ],
-            }
-        )
+            pages.append(
+                {
+                    "page": page_number,
+                    "source_image": str(
+                        image_path
+                    ),
+                    "blocks": [
+                        {
+                            "text": block.text,
+                            "confidence": block.confidence,
+                            "bbox": block.bbox,
+                            "reading_order": block.reading_order,
+                        }
+                        for block in blocks
+                    ],
+                }
+            )
 
         output = {
             "document_id": document_id,
             "pages": pages,
         }
 
-        output_path = Path(output_path)
+        output_path = Path(
+            output_path
+        )
 
         output_path.parent.mkdir(
             parents=True,

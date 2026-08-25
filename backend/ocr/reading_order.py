@@ -6,64 +6,32 @@ def sort_reading_order(
 ) -> list[OCRBlock]:
 
     if not blocks:
-        return blocks
+        return []
 
-    # Estimate page width
-    page_width = max(
-        block.x_max
-        for block in blocks
+    # --------------------------------------------------
+    # OCR blocks are already line-level blocks.
+    #
+    # Therefore reading order is simply:
+    #
+    #   top -> bottom
+    #   left -> right
+    #
+    # Do NOT detect columns here.
+    # Do NOT merge lines here.
+    # Paragraph merging is handled later.
+    # --------------------------------------------------
+
+    ordered = sorted(
+        blocks,
+        key=lambda block: (
+            block.y_min,
+            block.x_min,
+        ),
     )
 
-    # Heuristic:
-    # detect whether the document has multiple columns
-    column_threshold = page_width * 0.45
-
-    left_column = []
-    right_column = []
-    single_column = []
-
-    for block in blocks:
-
-        if block.center_x < column_threshold:
-            left_column.append(block)
-
-        else:
-            right_column.append(block)
-
-    # If the right side is almost empty,
-    # treat document as single-column.
-    if len(right_column) < len(blocks) * 0.15:
-
-        single_column = sorted(
-            blocks,
-            key=lambda b: (
-                b.y_min,
-                b.x_min,
-            ),
-        )
-
-        ordered = single_column
-
-    else:
-
-        left_column.sort(
-            key=lambda b: (
-                b.y_min,
-                b.x_min,
-            )
-        )
-
-        right_column.sort(
-            key=lambda b: (
-                b.y_min,
-                b.x_min,
-            )
-        )
-
-        ordered = (
-            left_column
-            + right_column
-        )
+    # --------------------------------------------------
+    # Assign reading order
+    # --------------------------------------------------
 
     for index, block in enumerate(
         ordered,
