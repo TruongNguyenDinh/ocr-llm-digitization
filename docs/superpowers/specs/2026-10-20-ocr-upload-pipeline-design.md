@@ -6,10 +6,10 @@ Let a user upload an image or PDF from the dashboard, follow PaddleOCR-VL progre
 
 ## User flow
 
-1. The left column provides a file picker for supported image types and PDF. Selecting a file starts an OCR job.
-2. The left column shows queued/running state and completed pages out of total pages. Failures show a readable error and allow another upload.
+1. The dedicated Upload page has a left-column file picker for supported image types and PDF. Selecting a file starts an OCR job. The Dashboard keeps its existing search/chat/document layout.
+2. The Upload page's left column shows queued/running state and completed pages out of total pages. Failures show a readable error and allow another upload.
 3. When OCR completes, the right document area renders each page's Markdown in order. The original tab previews the selected local file when the browser supports it.
-4. The left column reveals an **AI correction** button and model selector after OCR completes. The control is presentational only; it does not call Ollama.
+4. The Upload page's left column reveals an **AI correction** button and model selector after OCR completes. The control is presentational only; it does not call Ollama.
 
 ## Backend API
 
@@ -19,7 +19,7 @@ Job state stays in memory for this initial version; restarting the API loses job
 
 ## Frontend structure and states
 
-Keep upload and AI-correction controls in the left column, above the existing chat panel. The file picker has empty, selected, uploading/queued, running, completed, and failed states. Poll the job endpoint while active. Put the Markdown page viewer in the existing right-side document panel and retain its original/digitized tabs. The correction model choices initially include the configured local models; selecting one changes UI state only.
+Put upload and AI-correction controls in the Upload page's left column, separate from the Dashboard chat panel. The file picker has empty, selected, uploading/queued, running, completed, and failed states. Poll the job endpoint while active. Put the Markdown page viewer in the Upload page's right-side document panel and retain its original/digitized tabs. The correction model choices initially include the configured local models; selecting one changes UI state only.
 
 Configure the API base through `VITE_API_BASE_URL` and proxy `/api` to the local FastAPI server during Vite development. Use a Markdown renderer with raw HTML disabled, and resolve relative exported asset URLs through the backend asset endpoint.
 

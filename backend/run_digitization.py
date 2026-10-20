@@ -17,11 +17,14 @@ def main() -> None:
     args = parser.parse_args()
 
     def report_progress(event: dict[str, object]) -> None:
-        print(
-            f"OCR completed {event['completed']}/{event['total']} "
-            f"(page {event['page_number']})",
-            flush=True,
-        )
+        completed = event["completed"]
+        total = event["total"]
+        if event.get("event") == "processing_started":
+            print(f"OCR started: 0/{total} pages", flush=True)
+            return
+
+        page_number = event.get("page_number", completed)
+        print(f"OCR completed {completed}/{total} (page {page_number})", flush=True)
 
     try:
         draft = prepare_document(

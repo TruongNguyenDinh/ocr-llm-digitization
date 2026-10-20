@@ -175,6 +175,15 @@ def process_document(
     output_files: list[Path] = []
     pages: list[dict[str, Any]] = []
     try:
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "processing_started",
+                    "document_name": document_name,
+                    "completed": 0,
+                    "total": page_count,
+                }
+            )
         ocr_engine = engine if engine is not None else PaddleOCRVLEngine()
         results = ocr_engine.predict(source)
         for page_number, result in enumerate(results, start=1):
