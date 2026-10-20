@@ -1,33 +1,28 @@
-import sys
+import argparse
 
-from backend.ocr.pipeline import OCRPipeline
+from backend.ocr_vl.pipeline import process_document
 
 
-def main():
-
-    if len(sys.argv) != 3:
-
-        print(
-            "Usage:\n"
-            "python -m backend.run_ocr "
-            "<document_dir> <output_json>"
-        )
-
-        sys.exit(1)
-
-    document_dir = sys.argv[1]
-    output_json = sys.argv[2]
-
-    pipeline = OCRPipeline()
-
-    pipeline.process_document(
-        document_dir,
-        output_json,
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run PaddleOCR-VL on one image or PDF."
     )
-
-    print(
-        f"\nOCR completed: {output_json}"
+    parser.add_argument("input_file", help="Path to an image or PDF document")
+    parser.add_argument(
+        "--output-root",
+        default="data/raw",
+        help="Directory where the document output folder is created",
     )
+    args = parser.parse_args()
+
+    try:
+        result = process_document(args.input_file, output_root=args.output_root)
+    except Exception as exc:
+        parser.exit(2, f"error: {exc}\n")
+
+    print(f"OCR completed: {result['output_dir']}")
+    for output_path in result["outputs"]:
+        print(output_path)
 
 
 if __name__ == "__main__":
