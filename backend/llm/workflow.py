@@ -3,7 +3,11 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
-from .ollama_client import OllamaClient, OllamaError
+from .client import ChatClient, LLMClientError
+from .correction_guard import constrain_corrections
+from .gemini_client import GeminiClient
+from .ollama_client import OllamaClient
+from .markdown_review import preserve_protected_content
 from .prompts import CLASSIFICATION_SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT
 from .schemas import (
     CorrectedPage,
@@ -36,10 +40,17 @@ def load_labels(path: str | Path | None = None) -> dict[str, str]:
 class LocalLLMWorkflow:
     def __init__(
         self,
-        client: OllamaClient | None = None,
+        client: ChatClient | None = None,
         labels: dict[str, str] | None = None,
+        provider: str = "qwen",
     ) -> None:
-        self.client = client or OllamaClient()
+        if provider not in {"gemini", "qwen"}:
+            raise ValueError(f"Unsupported LLM provider: {provider}")
+        self.provider = provider
+        if client is None:
+            client = GeminiClient() if provider == "gemini" else OllamaClient()
+        self.client = client
+        self.model = getattr(client, "model", "unknown")
         self.labels = labels if labels is not None else load_labels()
 
     def process_pages(
@@ -66,8 +77,10 @@ class LocalLLMWorkflow:
 
         try:
             self.client.ensure_model_available()
-        except OllamaError as exc:
-            raise LLMWorkflowError(f"Ollama is unavailable for {document_name}: {exc}") from exc
+        except LLMClientError as exc:
+            raise LLMWorkflowError(
+                f"{self.provider.title()} is unavailable for {document_name}: {exc}"
+            ) from exc
 
         corrected_pages: list[CorrectedPage] = []
         for page in normalized_pages:
@@ -89,8 +102,10 @@ class LocalLLMWorkflow:
                         "required": ["corrected_text"],
                     },
                 )
-                corrected_text = parse_corrected_text(response)
-            except (OllamaError, LLMResponseError, KeyError, TypeError) as exc:
+                corrected_text = preserve_protected_content(
+                    page.text, constrain_corrections(page.text, parse_corrected_text(response))
+                )
+            except (LLMClientError, LLMResponseError, KeyError, TypeError) as exc:
                 raise LLMWorkflowError(
                     f"Could not correct page {page.page_id} of {document_name}: {exc}"
                 ) from exc
@@ -128,10 +143,6 @@ class LocalLLMWorkflow:
                             "type": "string",
                             "enum": sorted(self.labels),
                         },
-                        "label_name": {
-                            "type": "string",
-                            "enum": [self.labels[code] for code in sorted(self.labels)],
-                        },
                         "sender": {"type": ["string", "null"]},
                         "recipient": {"type": ["string", "null"]},
                         "date_time": {"type": ["string", "null"]},
@@ -139,7 +150,6 @@ class LocalLLMWorkflow:
                     },
                     "required": [
                         "label_code",
-                        "label_name",
                         "sender",
                         "recipient",
                         "date_time",
@@ -148,7 +158,7 @@ class LocalLLMWorkflow:
                 },
             )
             metadata = parse_metadata(metadata_response, self.labels)
-        except (OllamaError, LLMResponseError) as exc:
+        except (LLMClientError, LLMResponseError) as exc:
             raise LLMWorkflowError(
                 f"Could not classify/extract metadata for {document_name}: {exc}"
             ) from exc
@@ -161,4 +171,6 @@ class LocalLLMWorkflow:
             page_count=len(corrected_pages),
             pages=corrected_pages,
             metadata=metadata,
+            provider=self.provider,
+            model=self.model,
         )

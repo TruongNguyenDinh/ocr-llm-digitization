@@ -17,6 +17,7 @@ class SQLiteRepository:
                     review_id TEXT NOT NULL UNIQUE,
                     user_id TEXT NOT NULL,
                     sequence INTEGER NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
                     label_code TEXT NOT NULL,
                     label_name TEXT NOT NULL,
                     sender TEXT,
@@ -34,6 +35,9 @@ class SQLiteRepository:
                 )
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)")}
+            if "display_name" not in columns:
+                connection.execute("ALTER TABLE documents ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -61,17 +65,18 @@ class SQLiteRepository:
         connection.execute(
             """
             INSERT INTO documents (
-                document_id, review_id, user_id, sequence, label_code, label_name,
+                document_id, review_id, user_id, sequence, display_name, label_code, label_name,
                 sender, recipient, date_time, document_type, page_count, source_path,
                 digitized_dir, digitized_page_paths, origin_pdf_path, review_status,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["document_id"],
                 record["review_id"],
                 record["user_id"],
                 record["sequence"],
+                record["display_name"],
                 record["label_code"],
                 record["label_name"],
                 record["sender"],

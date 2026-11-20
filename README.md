@@ -34,4 +34,25 @@ npm run dev -- --host 0.0.0.0
 
 Mở URL Vite được in ra trong terminal. Để dùng Vite proxy, để `VITE_API_BASE_URL` trống trong `.env`; proxy chuyển `/api` tới `http://127.0.0.1:8000`. Nếu gọi API trực tiếp, đặt biến này thành địa chỉ backend, ví dụ `http://localhost:8000`.
 
-Nút **AI correction** và lựa chọn model hiện chỉ là giao diện; chúng chưa gọi Ollama.
+### Hiệu đính và duyệt cuối trên web
+
+Sau khi OCR hoàn tất, chọn **Qwen3:8B** trong mục Hiệu đính OCR. Qwen được chọn mặc định và gọi Ollama local với model `qwen3:8b` tại `http://localhost:11434`, không cần API key. Gemini là lựa chọn tùy chọn khi muốn dùng API Google.
+
+Đặt các biến môi trường trong terminal/backend process trước khi khởi động API:
+
+```bash
+export GEMINI_API_KEY="<Gemini API key>"
+export GEMINI_MODEL="gemini-3.8-flash"
+export OLLAMA_BASE_URL="http://localhost:11434"
+export OLLAMA_MODEL="qwen3:8b"
+# Tùy chọn: mặc định không giới hạn; đặt số giây để bật giới hạn chờ Ollama.
+# export OLLAMA_TIMEOUT_SECONDS="600"
+export DIGITIZATION_USER_ID="local_user"
+```
+
+`GEMINI_API_KEY` chỉ được đọc ở backend; không đặt key trong `frontend/.env` hoặc biến `VITE_*`. Nếu muốn điền trực tiếp trong code, mở file local `backend/llm/gemini_local_settings.py` (được Git bỏ qua) và gán key vào biến `GEMINI_API_KEY`. Biến môi trường `GEMINI_API_KEY` được ưu tiên hơn giá trị trong file local. Mức suy luận Gemini mặc định là `low` để giảm thời gian chờ; có thể đổi bằng `GEMINI_THINKING_LEVEL`. Bản web hiện chưa có đăng nhập, vì vậy `DIGITIZATION_USER_ID` mặc định là `local_user`.
+
+Gemini client tự retry tối đa ba lần cho các lỗi HTTP tạm thời (`429`, `500`, `502`, `503`, `504`), có backoff và tôn trọng `Retry-After`.
+Thời gian chờ mỗi phản hồi mặc định là 300 giây; có thể điều chỉnh bằng `GEMINI_TIMEOUT_SECONDS`.
+
+Khi hiệu đính xong, cửa sổ duyệt cuối hiển thị OCR và LLM cạnh nhau, cuộn đồng bộ và highlight các sửa của model. Nút **Edit** cho phép sửa văn bản; thay đổi được đồng bộ sang đoạn tương ứng ở cột kia và ghi vào audit log. Cú pháp Markdown, bảng, tiêu đề, công thức, thứ tự khối và hình ảnh được giữ theo đầu ra OCR. **Save with OCR output** hoặc **Save with LLM output** lập tức lưu bản chọn vào `storage/digitization/` cùng bản gốc PDF và `edit_log.json`. **Cancel** đóng cửa sổ, giữ review ở trạng thái chờ để mở lại sau.

@@ -1,4 +1,6 @@
+import gc
 import json
+import logging
 import re
 import shutil
 import tempfile
@@ -174,6 +176,7 @@ def process_document(
 
     output_files: list[Path] = []
     pages: list[dict[str, Any]] = []
+    ocr_engine: OCREngine | None = None
     try:
         if progress_callback is not None:
             progress_callback(
@@ -182,15 +185,44 @@ def process_document(
                     "document_name": document_name,
                     "completed": 0,
                     "total": page_count,
+                    "stage": "model_loading",
+                    "message": "Đang nạp PaddleOCR-VL và các model phụ trợ.",
                 }
             )
         ocr_engine = engine if engine is not None else PaddleOCRVLEngine()
-        results = ocr_engine.predict(source)
-        for page_number, result in enumerate(results, start=1):
-            if page_number > page_count:
-                raise RuntimeError(
-                    f"PaddleOCR-VL returned more than {page_count} pages "
-                    f"for {source}"
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "stage_changed",
+                    "stage": "document_preparation",
+                    "message": "Đã nạp model; đang chuẩn bị luồng nhận dạng tài liệu.",
+                }
+            )
+        results = iter(ocr_engine.predict(source))
+        page_number = 0
+        for next_page in range(1, page_count + 1):
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "page_started",
+                        "stage": "page_inference",
+                        "message": f"PaddleOCR-VL đang nhận dạng trang {next_page}/{page_count}.",
+                        "page_number": next_page,
+                    }
+                )
+            try:
+                result = next(results)
+            except StopIteration:
+                break
+            page_number = next_page
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "stage_changed",
+                        "stage": "page_export",
+                        "message": f"Đã nhận dạng trang {page_number}; đang ghi Markdown, JSON và hình cắt.",
+                        "page_number": page_number,
+                    }
                 )
             with tempfile.TemporaryDirectory(
                 prefix=f".{document_name}-{page_number:03d}-",
@@ -229,6 +261,25 @@ def process_document(
                     }
                 )
 
+        if page_number == page_count:
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "stage_changed",
+                        "stage": "result_validation",
+                        "message": "Đang kiểm tra số trang PaddleOCR-VL đã trả về.",
+                    }
+                )
+            try:
+                next(results)
+            except StopIteration:
+                pass
+            else:
+                raise RuntimeError(
+                    f"PaddleOCR-VL returned more than {page_count} pages "
+                    f"for {source}"
+                )
+
         if len(pages) != page_count:
             raise RuntimeError(
                 f"PaddleOCR-VL returned {len(pages)} of {page_count} expected "
@@ -244,6 +295,23 @@ def process_document(
             f"PaddleOCR-VL failed for {source} after {len(pages)} of "
             f"{page_count} pages: {exc}"
         ) from exc
+    finally:
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "stage_changed",
+                    "stage": "model_release",
+                    "message": "Đang đóng model OCR và thu hồi tài nguyên.",
+                }
+            )
+        close_engine = getattr(ocr_engine, "close", None)
+        if callable(close_engine):
+            try:
+                close_engine()
+            except Exception:
+                logging.exception("Failed to close PaddleOCR-VL inference models")
+        ocr_engine = None
+        gc.collect()
 
     return {
         "document_name": document_name,

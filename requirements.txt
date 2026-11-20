@@ -1,6 +1,7 @@
 paddleocr[doc-parser]
 pypdf
 Pillow
+pypdfium2
 fastapi
 uvicorn[standard]
 python-multipart

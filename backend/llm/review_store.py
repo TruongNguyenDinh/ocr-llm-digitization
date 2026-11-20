@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .comparison import PageComparison
-from .schemas import CorrectedPage, DocumentMetadata, ReviewDraft
+from .schemas import CorrectedPage, DocumentMetadata, ReviewDraft, ReviewMarkdownPage
 
 
 class ReviewStoreError(RuntimeError):
@@ -58,6 +58,7 @@ def set_review_status(
     review_path: str | Path,
     expected_status: str,
     new_status: str,
+    updates: dict[str, Any] | None = None,
 ) -> bytes:
     """Atomically update status and return the original bytes for rollback."""
     path = Path(review_path)
@@ -72,6 +73,8 @@ def set_review_status(
             f"expected {expected_status!r}"
         )
     payload["status"] = new_status
+    if updates:
+        payload.update(updates)
     _replace_bytes_atomically(path, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n")
     return original
 
@@ -126,6 +129,12 @@ def load_review_draft(
                 page_count=int(payload["page_count"]),
                 pages=[CorrectedPage(**page) for page in payload["pages"]],
                 metadata=DocumentMetadata(**payload["metadata"]),
+                provider=str(payload.get("provider", "qwen")),
+                model=str(payload.get("model", "qwen3:8b")),
+                markdown_pages=[
+                    ReviewMarkdownPage(**page)
+                    for page in payload.get("markdown_pages", [])
+                ],
                 status=payload["status"],
             )
         except (KeyError, TypeError, ValueError) as exc:

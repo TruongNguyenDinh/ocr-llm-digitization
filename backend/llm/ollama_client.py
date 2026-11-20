@@ -4,8 +4,10 @@ from typing import Any, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .client import LLMClientError
 
-class OllamaError(RuntimeError):
+
+class OllamaError(LLMClientError):
     """Raised when the local Ollama service cannot complete a request."""
 
 
@@ -14,13 +16,26 @@ class OllamaClient:
         self,
         base_url: str | None = None,
         model: str | None = None,
-        timeout: float = 180.0,
+        timeout: float | None = None,
     ) -> None:
         self.base_url = (
             base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         ).rstrip("/")
         self.model = model or os.environ.get("OLLAMA_MODEL", "qwen3:8b")
-        self.timeout = timeout
+        configured_timeout = os.environ.get("OLLAMA_TIMEOUT_SECONDS")
+        if timeout is not None:
+            if timeout < 0:
+                raise ValueError("Ollama timeout must be zero or positive")
+            self.timeout = timeout or None
+        elif configured_timeout:
+            parsed_timeout = float(configured_timeout)
+            if parsed_timeout < 0:
+                raise ValueError("OLLAMA_TIMEOUT_SECONDS must be zero or positive")
+            self.timeout = parsed_timeout or None
+        else:
+            # Ollama may need several minutes to load Qwen or generate a long page.
+            # Leave the request open until the service responds or the caller cancels.
+            self.timeout = None
 
     def _request(self, endpoint: str, payload: dict[str, Any] | None = None) -> Any:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -58,6 +73,7 @@ class OllamaClient:
         self,
         messages: Sequence[dict[str, str]],
         response_format: str | dict[str, Any] | None = None,
+        *, num_ctx: int | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -67,7 +83,16 @@ class OllamaClient:
         }
         if response_format is not None:
             payload["format"] = response_format
+        if num_ctx is not None:
+            payload["options"] = {"num_ctx": num_ctx}
         response = self._request("/api/chat", payload)
+        if isinstance(response, dict) and response.get("done_reason") in {
+            "length",
+            "max_tokens",
+        }:
+            raise OllamaError(
+                "Ollama stopped before completing its response because the output token limit was reached."
+            )
         try:
             content = response["message"]["content"]
         except (KeyError, TypeError) as exc:

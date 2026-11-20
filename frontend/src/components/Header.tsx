@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { getSystemStatus, type SystemStatus } from '../services/systemApi'
 
 type HeaderProps = {
-  activePage: 'dashboard' | 'upload'
-  onNavigate: (page: 'dashboard' | 'upload') => void
+  activePage: 'dashboard' | 'upload' | 'library'
+  onNavigate: (page: 'dashboard' | 'upload' | 'library') => void
 }
 
 function BrandMark() {
@@ -47,6 +47,9 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
       <nav className="main-nav" aria-label="Điều hướng chính">
         <button className={activePage === 'dashboard' ? 'nav-link active' : 'nav-link'} onClick={() => onNavigate('dashboard')}>
           <span className="nav-dot" />Dashboard
+        </button>
+        <button className={activePage === 'library' ? 'nav-link active' : 'nav-link'} onClick={() => onNavigate('library')}>
+          <span className="library-nav-icon" aria-hidden="true">▤</span>Library
         </button>
         <button className={activePage === 'upload' ? 'nav-link active' : 'nav-link'} onClick={() => onNavigate('upload')}>
           <span className="upload-symbol">↑</span>Upload

@@ -49,6 +49,7 @@ dist/
 .env
 .env.local
 .env.*.local
+backend/llm/gemini_local_settings.py
 
 # Keep example environment files
 !.env.example

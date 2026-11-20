@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react'
 
-export type UploadStatus = 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed'
+export type UploadStatus = 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 type UploadControlProps = {
   status: UploadStatus
@@ -8,13 +8,22 @@ type UploadControlProps = {
   completedPages: number
   totalPages: number | null
   error: string | null
+  stageMessage: string
+  stageStartedAt: string | null
+  lastActivityAt: string | null
+  currentPage: number | null
+  diagnostics: string[]
   onSelectFile: (file: File) => void
+  onCancel: () => void
+  isCancelling: boolean
 }
 
 const acceptedFiles = '.pdf,.jpg,.jpeg,.png,.bmp,.tiff,.webp'
 
-export function UploadControl({ status, filename, completedPages, totalPages, error, onSelectFile }: UploadControlProps) {
+export function UploadControl({ status, filename, completedPages, totalPages, error, stageMessage, stageStartedAt, lastActivityAt, currentPage, diagnostics, onSelectFile, onCancel, isCancelling }: UploadControlProps) {
   const isBusy = status === 'submitting' || status === 'queued' || status === 'running'
+  const isProcessing = status === 'queued' || status === 'running'
+  const lastActivityAge = lastActivityAt ? Math.floor((Date.now() - Date.parse(lastActivityAt)) / 1000) : 0
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]
@@ -45,17 +54,47 @@ export function UploadControl({ status, filename, completedPages, totalPages, er
           {isBusy && <>
             <div className="progress-caption"><span>{statusLabel(status)}</span><strong>{totalPages ? `${completedPages}/${totalPages} trang` : 'Đang chuẩn bị'}</strong></div>
             <div className="progress-track"><span style={{ width: `${totalPages ? Math.min(100, (completedPages / totalPages) * 100) : 5}%` }} /></div>
+            {status === 'running' && <div className="ocr-stage-status">
+              <p>{stageMessage}</p>
+              <span>
+                {currentPage ? `Trang ${currentPage}` : 'Giai đoạn chuẩn bị'}
+                {stageStartedAt ? ` · bước này ${formatDurationSince(stageStartedAt)}` : ''}
+              </span>
+              {lastActivityAt && <span>Cập nhật worker gần nhất: {formatDurationSince(lastActivityAt)} trước</span>}
+              {lastActivityAge >= 60 && <strong className="ocr-stall-warning">Worker chưa phát thêm log trong hơn một phút; có thể đang tính toán bên trong model hoặc bị treo.</strong>}
+            </div>}
           </>}
+          {isProcessing && <>
+            <p className="upload-result">Vui lòng giữ cửa sổ trong quá trình xử lý. Không chuyển sang trang khác của web.</p>
+            {error && <p className="upload-error">{error}</p>}
+            <button className="upload-cancel-button" type="button" onClick={onCancel} disabled={isCancelling}>
+              {isCancelling ? 'Đang dừng...' : 'Dừng OCR'}
+            </button>
+          </>}
+          {diagnostics.length > 0 && <details className="ocr-diagnostics">
+            <summary>Chi tiết kỹ thuật ({diagnostics.length} dòng gần nhất)</summary>
+            <pre>{diagnostics.join('\n')}</pre>
+          </details>}
           {status === 'completed' && <p className="upload-result">Đã nhận dạng {totalPages ?? completedPages} trang.</p>}
           {status === 'failed' && <>
             {totalPages !== null && <p className="upload-result">Đã hoàn tất {completedPages}/{totalPages} trang trước khi xảy ra lỗi.</p>}
             <p className="upload-error">{error ?? 'Không thể xử lý tài liệu.'}</p>
           </>}
+          {status === 'cancelled' && <p className="upload-result">Đã dừng OCR theo yêu cầu.</p>}
         </div>
       )}
       {!filename && <p className="upload-format-hint">JPG, PNG, WEBP, TIFF, BMP</p>}
     </section>
   )
+}
+
+function formatDurationSince(timestamp: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(timestamp)) / 1000))
+  if (seconds < 60) return `${seconds} giây`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (minutes < 60) return `${minutes} phút ${remainingSeconds} giây`
+  return `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút`
 }
 
 function statusLabel(status: UploadStatus): string {

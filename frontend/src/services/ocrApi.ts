@@ -3,7 +3,7 @@ export type OcrPage = {
   markdown: string
 }
 
-export type OcrJobStatus = 'queued' | 'running' | 'completed' | 'failed'
+export type OcrJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 export type OcrJob = {
   job_id: string
@@ -14,6 +14,12 @@ export type OcrJob = {
   total_pages: number | null
   pages: OcrPage[]
   error: string | null
+  stage: string
+  stage_message: string
+  stage_started_at: string | null
+  last_activity_at: string | null
+  current_page: number | null
+  diagnostics: string[]
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -36,6 +42,14 @@ export async function createOcrJob(file: File): Promise<string> {
 
 export async function getOcrJob(jobId: string): Promise<OcrJob> {
   const response = await fetch(`${apiBaseUrl}/api/ocr/jobs/${encodeURIComponent(jobId)}`)
+  return readResponse<OcrJob>(response)
+}
+
+export async function cancelOcrJob(jobId: string, keepalive = false): Promise<OcrJob> {
+  const response = await fetch(`${apiBaseUrl}/api/ocr/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: 'POST',
+    keepalive,
+  })
   return readResponse<OcrJob>(response)
 }
 

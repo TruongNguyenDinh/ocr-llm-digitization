@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+from shutil import which
 
 import psutil
 
@@ -19,10 +21,18 @@ def read_system_status() -> dict[str, float | None]:
 
 
 def _read_gpu_percent() -> float | None:
+    nvidia_smi = which("nvidia-smi")
+    if nvidia_smi is None:
+        wsl_nvidia_smi = Path("/usr/lib/wsl/lib/nvidia-smi")
+        if wsl_nvidia_smi.is_file():
+            nvidia_smi = str(wsl_nvidia_smi)
+        else:
+            return None
+
     try:
         result = subprocess.run(
             [
-                "nvidia-smi",
+                nvidia_smi,
                 "--query-gpu=utilization.gpu",
                 "--format=csv,noheader,nounits",
             ],
