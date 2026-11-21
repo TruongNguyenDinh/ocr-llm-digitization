@@ -50,6 +50,8 @@ def run_library_search(question: str, page: int = 0, page_size: int = 20) -> dic
 
 @router.post("/search-ai")
 def search_ai(request: SearchAIRequest) -> dict[str, object]:
+    if not request.question.strip():
+        raise HTTPException(422, "Nhập nội dung cần tìm kiếm.")
     try:
         return run_library_search(request.question.strip(), request.page, request.page_size)
     except OllamaError as exc:
