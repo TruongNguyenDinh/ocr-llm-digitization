@@ -41,7 +41,7 @@ class LibrarySearchTests(unittest.TestCase):
                 root = Path(temporary)
                 rows = []
                 for document_id, pages in {
-                    "decision": ["Số: 81/QĐ-TTg\nQUYẾT ĐỊNH phê duyệt Chương trình hỗ trợ pháp lý.", signature],
+                    "decision": ["THỦ TƯỚNG CHÍNH PHỦ\n\nSố: 81/QĐ-TTg\n\nNgày 19 tháng 01 năm 2021\n\nQUYẾT ĐỊNH phê duyệt Chương trình hỗ trợ pháp lý.", signature],
                     "unrelated": ["QUYẾT ĐỊNH khác. Thủ tướng Nguyễn Tấn Dũng đã ký."],
                     "partial-name": ["QUYẾT ĐỊNH khác. Nguyễn Xuân PhúcAnh."],
                 }.items():
@@ -61,6 +61,8 @@ class LibrarySearchTests(unittest.TestCase):
 
                 self.assertEqual({item.document_id for item in result.results}, {"decision"})
                 self.assertEqual({item.page_number for item in result.results}, {1, 2})
+                self.assertTrue(any("81/QĐ-TTg" in item.snippet and "QUYẾT ĐỊNH" in item.snippet
+                                    for item in result.results if item.page_number == 1))
 
     def test_extraction_preserves_only_question_facts_and_falls_back_on_invalid_json(self):
         client = FakeClient(json.dumps({"terms": ["bổ nhiệm"], "entities": ["Nguyễn Văn A"],

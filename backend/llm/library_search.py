@@ -222,6 +222,27 @@ class LibrarySearchService:
             candidates[key] = (passage.text, old[1] if old else 0.0,
                                max(lexical_score, old[2] if old else 0.0))
 
+        # Names often occur only on the signature page. Keep the beginning of
+        # that same document as evidence too: isolated number/date paragraphs
+        # have no query-word overlap, but identify what was actually signed.
+        if entity_patterns:
+            document_scores: dict[str, float] = {}
+            for (document_id, *_rest), (_text, vector_score, lexical_score) in candidates.items():
+                document_scores[document_id] = max(document_scores.get(document_id, 0.0),
+                                                   vector_score + lexical_score)
+            introductions: dict[str, list[Any]] = {}
+            for document_id, passage in all_passages:
+                if passage.page_number == 1 and document_id in document_scores:
+                    intro = introductions.setdefault(document_id, [])
+                    if len(intro) < 4 and sum(len(item.text) for item in intro) + len(passage.text) <= 1200:
+                        intro.append(passage)
+            for document_id, intro in introductions.items():
+                if intro:
+                    first = intro[0]
+                    key = (document_id, 1, first.chunk_index, first.content_hash)
+                    candidates[key] = ("\n\n".join(item.text for item in intro), 0.0,
+                                       document_scores[document_id])
+
         results = []
         for (document_id, page_number, _chunk, _hash), (text, vector_score, lexical_score) in candidates.items():
             row = documents[document_id]
