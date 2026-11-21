@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChatPanel } from '../components/ChatPanel'
 import { DocumentViewer } from '../components/DocumentViewer'
 import type { OcrPage } from '../services/ocrApi'
-import { parseAICommand } from '../services/searchCommands'
+import { hasAICommand, parseAICommand } from '../services/searchCommands'
 import { searchLibraryAI, type LibrarySearchHit } from '../services/llmApi'
 
 const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '') + '/api/library'
@@ -31,6 +31,8 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
   const [globalBusy, setGlobalBusy] = useState(false)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [targetPage, setTargetPage] = useState<number | undefined>()
+  const aiCommandActive = hasAICommand(query)
+  const searchText = aiCommandActive ? query.replace(/^@ai\s*:\s*/i, '') : query
   async function askLibrary(question: string, page = 0, includeQuestion = page === 0) {
     if (globalBusy) return
     if (includeQuestion) setGlobalMessages(messages => [...messages, { role: 'user', content: question }])
@@ -95,8 +97,14 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
     <aside className="left-column">
       <section className="search-section" ref={searchSection}>
         <form className="search-box" onSubmit={submitSearch}><span className="search-icon" aria-hidden="true" />
-          <input type="search" placeholder="Tên, danh mục… hoặc /AI: câu hỏi" aria-label="Tìm kiếm tài liệu" value={query}
-            onFocus={() => setSearchOpen(true)} onChange={e => { setQuery(e.target.value); setOffset(0); setSearchOpen(true); if (parseAICommand(e.target.value)) setLoading(false) }} />
+          {aiCommandActive && <span className="ai-command-chip" aria-label="Tìm toàn thư viện bằng AI">@AI</span>}
+          <input type="search" placeholder={aiCommandActive ? 'Nhập nội dung cần tìm…' : 'Tên, danh mục… hoặc @AI: câu hỏi'} aria-label="Tìm kiếm tài liệu" value={searchText}
+            onFocus={() => setSearchOpen(true)} onChange={e => {
+              setQuery(aiCommandActive ? (e.target.value ? `@AI: ${e.target.value}` : '@AI:') : e.target.value)
+              setOffset(0); setSearchOpen(true)
+              if (parseAICommand(e.target.value) || aiCommandActive) setLoading(false)
+            }}
+            onKeyDown={e => { if (aiCommandActive && !searchText && e.key === 'Backspace') { e.preventDefault(); setQuery('') } }} />
           {parseAICommand(query) && <button type="submit" aria-label="Tìm bằng Trợ Lý">AI</button>}
         </form>
         {searchOpen && <div className="library-popover" role="region" aria-label="Kết quả tài liệu">

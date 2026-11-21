@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
 import type { LibrarySearchHit } from '../services/llmApi'
-import { parseAICommand } from '../services/searchCommands'
+import { hasAICommand, parseAICommand } from '../services/searchCommands'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type GlobalMessage = Message & { results?: LibrarySearchHit[]; total?: number; page?: number; pageSize?: number; question?: string }
@@ -45,6 +45,8 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
   const contextRemaining = Math.max(0, contextLimit - contextUsed)
   const contextPercent = Math.min(100, contextUsed / contextLimit * 100)
   const contextStatus = contextUsed > contextLimit ? 'exhausted' : contextRemaining < contextLimit * 0.15 ? 'near' : 'ok'
+  const aiCommandActive = hasAICommand(draft)
+  const composerText = aiCommandActive ? draft.replace(/^@ai\s*:\s*/i, '') : draft
 
   useEffect(() => {
     setEnabled(false)
@@ -157,9 +159,15 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
         <button type="button" className="suggestion" key={text} disabled={!document || !enabled || busy} onClick={() => void send(text)}>{text} <span aria-hidden="true">↗</span></button>)}
     </div>}
     <form className="chat-composer" onSubmit={event => { event.preventDefault(); void send(draft) }}>
-      <textarea aria-label="Tin nhắn cho trợ lý" placeholder={document ? 'Hỏi về tài liệu… hoặc nhập /AI: để tìm toàn thư viện' : 'Nhập /AI: để tìm trong thư viện…'} rows={2} value={draft}
-        disabled={busy || globalBusy} onChange={event => setDraft(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft) } }} />
+      <div className="chat-input-row">
+        {aiCommandActive && <span className="ai-command-chip" aria-label="Tìm toàn thư viện bằng AI">@AI</span>}
+        <textarea aria-label="Tin nhắn cho trợ lý" placeholder={document ? 'Hỏi về tài liệu… hoặc nhập @AI: để tìm toàn thư viện' : 'Nhập @AI: để tìm trong thư viện…'} rows={2} value={composerText}
+          disabled={busy || globalBusy} onChange={event => setDraft(aiCommandActive ? (event.target.value ? `@AI: ${event.target.value}` : '@AI:') : event.target.value)}
+          onKeyDown={event => {
+            if (aiCommandActive && !composerText && event.key === 'Backspace') { event.preventDefault(); setDraft(''); return }
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft) }
+          }} />
+      </div>
       <div className="composer-footer"><span>Trợ Lý</span>
         <button type="submit" className="send-button" aria-label="Gửi tin nhắn" disabled={busy || globalBusy || !draft.trim() || (!parseAICommand(draft) && (!document || !enabled || contextUsed > contextLimit))}>↑</button>
       </div>
