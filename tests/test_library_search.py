@@ -45,6 +45,13 @@ class LibrarySearchTests(unittest.TestCase):
         malformed = extract_search_query("Thạch Sanh", FakeClient("not json"))
         self.assertIn("sanh", malformed.terms)
 
+    def test_promotes_capitalized_name_from_terms_to_entity(self):
+        client = FakeClient('{"terms":["Lý Thông"],"entities":[],"dates":[],"identifiers":[]}')
+
+        result = extract_search_query("Lý Thông phải chịu hậu quả gì?", client)
+
+        self.assertIn("Lý Thông", result.entities)
+
     def test_hybrid_search_ranks_exact_lexical_match_and_paginates_all_documents(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -93,6 +100,61 @@ class LibrarySearchTests(unittest.TestCase):
         result = answer_library_question("Năm nào?", [], client)
         self.assertEqual(result.answer, "Chưa tìm thấy tài liệu có căn cứ phù hợp để trả lời câu hỏi này.")
         self.assertEqual(client.calls, [])
+
+    def test_named_entity_match_ranks_story_above_common_legal_terms(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legal_path = root / "legal.md"
+            legal_path.write_text("Cơ quan phải chịu hậu quả qua quá trình hỗ trợ pháp lý.", encoding="utf-8")
+            story_path = root / "story.md"
+            story_path.write_text("Lý Thông bị sét đánh chết vì tội ác của mình.", encoding="utf-8")
+            rows = [
+                {"document_id": "legal", "display_name": "Văn bản pháp lý", "source_path": str(root / "_source.pdf"),
+                 "review_status": "finalized", "index_status": "failed", "digitized_page_paths": [str(legal_path)]},
+                {"document_id": "story", "display_name": "Truyện Thạch Sanh", "source_path": str(root / "_source.pdf"),
+                 "review_status": "finalized", "index_status": "failed", "digitized_page_paths": [str(story_path)]},
+            ]
+            extraction = FakeClient('{"terms":["hậu quả"],"entities":["Lý Thông"],"dates":[],"identifiers":[]}')
+            service = LibrarySearchService(FakeRepository(rows), FakeIndex([]), FakeEmbedder(), extraction,
+                                           storage_root=root)
+
+            result = service.search_library("Lý Thông phải chịu hậu quả gì?")
+
+            self.assertEqual(result.results[0].document_id, "story")
+            self.assertEqual({item.document_id for item in result.results}, {"story"})
+
+    def test_vector_results_from_documents_with_failed_index_status_are_ignored(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page_path = root / "page.md"
+            page_path.write_text("Nội dung được lưu.", encoding="utf-8")
+            row = {"document_id": "failed-doc", "display_name": "Tài liệu lỗi", "source_path": str(root / "doc.pdf"),
+                   "review_status": "finalized", "index_status": "failed", "digitized_page_paths": [str(page_path)]}
+            stale = ScoredPassage("failed-doc", 1, 0, "Đoạn vector cũ không còn hợp lệ", "old-hash", 0.95)
+            service = LibrarySearchService(FakeRepository([row]), FakeIndex([stale]), FakeEmbedder(),
+                                           FakeClient('{"terms":["từ khóa"],"entities":[],"dates":[],"identifiers":[]}'),
+                                           storage_root=root)
+
+            result = service.search_library("từ khóa không có trong tài liệu")
+
+            self.assertEqual(result.results, [])
+
+    def test_empty_display_name_uses_document_folder_instead_of_source_filename(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "government_document"
+            folder.mkdir()
+            page_path = root / "page.md"
+            page_path.write_text("Quyết định số 12.", encoding="utf-8")
+            row = {"document_id": "doc", "display_name": "", "source_path": str(folder / "_source.pdf"),
+                   "review_status": "finalized", "index_status": "pending", "digitized_page_paths": [str(page_path)]}
+            service = LibrarySearchService(FakeRepository([row]), FakeIndex([]), FakeEmbedder(),
+                                           FakeClient('{"terms":["Quyết định"],"entities":[],"dates":[],"identifiers":[]}'),
+                                           storage_root=root)
+
+            result = service.search_library("Quyết định số 12")
+
+            self.assertEqual(result.results[0].document_name, "government_document")
 
 
 if __name__ == "__main__":
