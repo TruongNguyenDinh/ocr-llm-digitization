@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import re
+import math
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -22,6 +24,7 @@ _EXTRACTION_SCHEMA = {
                    for key in ("terms", "entities", "dates", "identifiers")},
     "required": ["terms", "entities", "dates", "identifiers"],
 }
+_CAPITALIZED_PHRASE = re.compile(r"\b[A-ZÀ-ÖØ-ÞĐ][^\W\d_]*(?:\s+[A-ZÀ-ÖØ-ÞĐ][^\W\d_]*)+\b")
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,15 @@ def extract_search_query(question: str, client: OllamaClient | None = None) -> S
         entities = _clean_extracted(payload.get("entities"), question)
         dates = _clean_extracted(payload.get("dates"), question)
         identifiers = _clean_extracted(payload.get("identifiers"), question)
+        term_values = {_normalize(value) for value in terms}
+        known_entities = {_normalize(value) for value in entities}
+        inferred_entities = [
+            match.group(0).strip() for match in _CAPITALIZED_PHRASE.finditer(question)
+            if _normalize(match.group(0)) in term_values
+            and not any(_normalize(match.group(0)) in entity or entity in _normalize(match.group(0))
+                        for entity in known_entities)
+        ]
+        entities = list(dict.fromkeys([*entities, *inferred_entities]))
         if not any((terms, entities, dates, identifiers)):
             terms = sorted(_terms(question))
     except (ValueError, TypeError, json.JSONDecodeError):
@@ -124,38 +136,75 @@ class LibrarySearchService:
     def search_library(self, question: str, page: int = 0, page_size: int = 20) -> SearchPage:
         extracted = extract_search_query(question, self.extraction_client)
         rows = self.repository.list_finalized_documents()
+        documents = {str(row["document_id"]): row for row in rows}
+        indexed_document_ids = {
+            document_id for document_id, row in documents.items()
+            if row.get("index_status") == "indexed"
+        }
+
+        # If the question names a person, organization, or place, keep retrieval
+        # inside documents that actually mention that entity. This prevents
+        # common words such as "phải" and "chịu" from surfacing unrelated files.
+        normalized_entities = [_normalize(value) for value in extracted.entities if value.strip()]
+        entity_documents: set[str] = set()
+        if normalized_entities:
+            for document_id, row in documents.items():
+                full_text = _normalize("\n".join(self._read_pages(row)))
+                if any(entity in full_text for entity in normalized_entities):
+                    entity_documents.add(document_id)
+            documents = {key: row for key, row in documents.items() if key in entity_documents}
+
         vector_results: list[ScoredPassage] = []
-        if self.vector_index.count():
+        if indexed_document_ids and documents and self.vector_index.count():
             vector = self.embedder.embed([extracted.enriched_query])[0]
             vector_results = self.vector_index.search(
                 vector, limit=self.vector_index.count(), score_threshold=self.vector_score_threshold)
-        documents = {str(row["document_id"]): row for row in rows}
         candidates: dict[tuple[str, int, int, str], tuple[str, float, float]] = {}
         for item in vector_results:
-            if item.document_id in documents and item.score >= self.vector_score_threshold:
+            if item.document_id in documents and item.document_id in indexed_document_ids \
+                    and item.score >= self.vector_score_threshold:
                 key = (item.document_id, item.page_number, item.chunk_index, item.content_hash)
                 candidates[key] = (item.text, item.score, 0.0)
 
         query_terms = set(_terms(" ".join([extracted.original_query, extracted.enriched_query])))
+        for entity in extracted.entities:
+            query_terms.update(re.findall(r"[a-z0-9]+", _normalize(entity)))
         normalized_question = _normalize(extracted.original_query)
+        all_passages: list[tuple[str, Any]] = []
         for document_id, row in documents.items():
-            for passage in split_markdown_pages(self._read_pages(row)):
-                passage_terms = _terms(passage.text)
-                overlap = query_terms & passage_terms
-                if not overlap:
-                    continue
-                lexical_score = len(overlap) / max(1, len(query_terms))
-                if normalized_question in _normalize(passage.text):
-                    lexical_score += 1.0
-                key = (document_id, passage.page_number, passage.chunk_index, passage.content_hash)
-                old = candidates.get(key)
-                candidates[key] = (passage.text, old[1] if old else 0.0,
-                                   max(lexical_score, old[2] if old else 0.0))
+            all_passages.extend((document_id, passage)
+                                for passage in split_markdown_pages(self._read_pages(row)))
+
+        frequencies: dict[str, int] = {}
+        for _document_id, passage in all_passages:
+            for term in query_terms & _terms(passage.text):
+                frequencies[term] = frequencies.get(term, 0) + 1
+        passage_count = max(1, len(all_passages))
+
+        for document_id, passage in all_passages:
+            passage_terms = _terms(passage.text)
+            overlap = query_terms & passage_terms
+            entity_hits = sum(entity in _normalize(passage.text) for entity in normalized_entities)
+            if not overlap and not entity_hits:
+                continue
+            lexical_score = sum(math.log(1 + passage_count / (1 + frequencies[term]))
+                                for term in overlap)
+            lexical_score += 2.0 * entity_hits
+            if normalized_question in _normalize(passage.text):
+                lexical_score += 1.0
+            key = (document_id, passage.page_number, passage.chunk_index, passage.content_hash)
+            old = candidates.get(key)
+            candidates[key] = (passage.text, old[1] if old else 0.0,
+                               max(lexical_score, old[2] if old else 0.0))
 
         results = []
         for (document_id, page_number, _chunk, _hash), (text, vector_score, lexical_score) in candidates.items():
             row = documents[document_id]
-            name = row.get("display_name") or Path(row["source_path"]).stem
+            name = row.get("display_name")
+            if not name:
+                page_paths = row.get("digitized_page_paths") or []
+                source = Path(row.get("source_path") or (page_paths[0] if page_paths else document_id))
+                name = source.parent.name or source.stem
             results.append(SearchResult(document_id, str(name), page_number, text,
                                         vector_score + lexical_score))
         results.sort(key=lambda item: (-item.score, item.document_name.casefold(), item.page_number))
