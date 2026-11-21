@@ -49,10 +49,10 @@ def document_chat(document_id: str, request: DocumentChatRequest):
     if request.messages and (request.messages[0].role != 'user' or request.messages[-1].role != 'user'
             or any(message.role != ('user' if index % 2 == 0 else 'assistant') for index, message in enumerate(request.messages))):
         raise HTTPException(422, 'Lịch sử chat không hợp lệ.')
-    if request.messages and request.messages[-1].content.lstrip().lower().startswith('/ai:'):
+    if request.messages and request.messages[-1].content.lstrip().lower().startswith('@ai:'):
         question = request.messages[-1].content.lstrip()[4:].strip()
         if not question:
-            raise HTTPException(422, 'Sau /AI: hãy nhập câu hỏi cần tìm.')
+            raise HTTPException(422, 'Sau @AI: hãy nhập câu hỏi cần tìm.')
         try:
             return run_library_search(question)
         except OllamaError as exc:

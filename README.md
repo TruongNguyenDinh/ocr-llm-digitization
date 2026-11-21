@@ -62,7 +62,7 @@ Thời gian chờ mỗi phản hồi mặc định là 300 giây; có thể đi�
 
 ### Tìm kiếm toàn thư viện bằng AI
 
-Tìm kiếm từ khóa thông thường vẫn tra tên và nội dung tài liệu đã lưu. Nhập `/AI: câu hỏi` trong ô tìm kiếm Dashboard hoặc khung chat để Ollama trích xuất từ khóa, tạo embedding, tìm các đoạn liên quan và trả lời dựa trên tài liệu đã duyệt. Chọn một kết quả trong chat để mở tài liệu tại đúng trang. Kết quả được phân trang và có thể duyệt tiếp.
+Tìm kiếm từ khóa thông thường vẫn tra tên và nội dung tài liệu đã lưu. Nhập `@AI: câu hỏi` trong ô tìm kiếm Dashboard hoặc khung chat để Ollama trích xuất từ khóa, tạo embedding, tìm các đoạn liên quan và trả lời dựa trên tài liệu đã duyệt. Chọn một kết quả trong chat để mở tài liệu tại đúng trang. Kết quả được phân trang và có thể duyệt tiếp.
 
 Cài model embedding một lần và giữ Ollama chạy khi dùng tìm kiếm AI:
 

@@ -45,7 +45,7 @@ class LibrarySearchApiTests(unittest.TestCase):
         with patch("backend.api.library.record", return_value={"document_id": "doc-1"}), \
                 patch("backend.api.library.run_library_search", return_value={"answer": "found"}) as search:
             response = client.post("/api/library/doc-1/chat", json={
-                "messages": [{"role": "user", "content": "/AI: Ông A được bổ nhiệm năm nào?"}],
+                "messages": [{"role": "user", "content": "@AI: Ông A được bổ nhiệm năm nào?"}],
             })
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["answer"], "found")
