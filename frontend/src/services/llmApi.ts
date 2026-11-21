@@ -1,6 +1,6 @@
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
-export type LlmProvider = 'gemini' | 'qwen'
+export type LlmProvider = 'qwen'
 export type ReviewSource = 'ocr' | 'llm'
 
 export type LibrarySearchHit = {

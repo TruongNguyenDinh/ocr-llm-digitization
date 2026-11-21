@@ -33,7 +33,6 @@ export function CorrectionControls({
           onChange={(event) => onProviderChange(event.target.value as LlmProvider)}
           disabled={isLoading || hasReview || isFinalized}>
           <option value="qwen">Qwen3:8B · Ollama · mặc định</option>
-          <option value="gemini">Gemini</option>
         </select>
         <button className="correction-button" type="button"
           disabled={(!canStart && !hasReview) || isLoading || isFinalized} onClick={onStartOrOpen}>

@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from .client import ChatClient, LLMClientError
 from .correction_guard import constrain_corrections
-from .gemini_client import GeminiClient
 from .ollama_client import OllamaClient
 from .markdown_review import preserve_protected_content
 from .prompts import CLASSIFICATION_SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT
@@ -44,11 +43,11 @@ class LocalLLMWorkflow:
         labels: dict[str, str] | None = None,
         provider: str = "qwen",
     ) -> None:
-        if provider not in {"gemini", "qwen"}:
+        if provider != "qwen":
             raise ValueError(f"Unsupported LLM provider: {provider}")
         self.provider = provider
         if client is None:
-            client = GeminiClient() if provider == "gemini" else OllamaClient()
+            client = OllamaClient()
         self.client = client
         self.model = getattr(client, "model", "unknown")
         self.labels = labels if labels is not None else load_labels()

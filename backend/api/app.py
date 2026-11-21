@@ -57,7 +57,7 @@ _cancel_requested: set[str] = set()
 
 class LLMReviewRequest(BaseModel):
     document_name: str
-    provider: Literal["gemini", "qwen"] = "qwen"
+    provider: Literal["qwen"] = "qwen"
 
 
 class ReviewEditLogEntry(BaseModel):
