@@ -7,7 +7,8 @@ import './App.css'
 
 function App() {
   const [activePage, setActivePage] = useState<'dashboard' | 'upload' | 'library'>('dashboard')
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('document'))
 
   return (
     <div className="app-shell">

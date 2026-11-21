@@ -1,3 +1,8 @@
+/** Suggest the command while typing its prefix, without matching email addresses. */
+export function suggestsAICommand(value: string): boolean {
+  return /^@(?:a|ai)?$/i.test(value.trimStart())
+}
+
 /** Whether the input starts with the global AI-search token, including an empty query. */
 export function hasAICommand(value: string): boolean {
   return /^@ai\s*:/i.test(value.trimStart())

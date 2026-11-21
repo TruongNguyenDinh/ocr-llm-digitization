@@ -35,6 +35,22 @@ class FakeEmbedder:
 
 
 class LibrarySearchTests(unittest.TestCase):
+    def test_document_results_are_deduplicated_before_pagination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            rows = []
+            for index in range(3):
+                path = root / f"{index}.md"
+                path.write_text("Bổ nhiệm cán bộ.\n\nQuyết định bổ nhiệm mới.", encoding="utf-8")
+                rows.append({"document_id": f"doc-{index}", "display_name": f"Tài liệu {index}",
+                             "digitized_page_paths": [str(path)], "index_status": "failed"})
+            service = LibrarySearchService(FakeRepository(rows), FakeIndex([]), FakeEmbedder(),
+                FakeClient('{"terms":["bổ nhiệm"],"entities":[],"dates":[],"identifiers":[]}'), storage_root=root)
+            pages = [service.search_library("bổ nhiệm", page=index, page_size=1, documents_only=True)
+                     for index in range(3)]
+            self.assertEqual([page.total for page in pages], [3, 3, 3])
+            self.assertEqual({page.results[0].document_id for page in pages}, {"doc-0", "doc-1", "doc-2"})
+
     def test_person_with_title_matches_separate_signature_and_decision_pages(self):
         for signature in ("Nguyễn Xuân Phúc\n\nTHỦ TƯỚNG", "NGUYỄN  XUÂN\nPHÚC\nTHỦ TƯỚNG"):
             with self.subTest(signature=signature), tempfile.TemporaryDirectory() as temporary:

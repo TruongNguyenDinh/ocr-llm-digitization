@@ -206,6 +206,17 @@
 .send-button { width: 31px; height: 31px; border-radius: 50%; }
 .chat-note { margin: 4px 0 0; font-size: 10px; }
 .global-search-results { display: grid; gap: 6px; width: min(440px, 100%); margin-top: 9px; }
+.global-document-link { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border: 0; background: transparent; color: #315d45; text-align: left; cursor: pointer; font: inherit; font-size: 13px; }
+.global-document-link span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+.global-document-link:hover { color: #173c27; }
+.global-document-link:focus-visible { outline: 2px solid #72977b; outline-offset: 3px; border-radius: 4px; }
+.chat-composer, .search-section { position: relative; }
+.ai-command-menu { position: absolute; z-index: 60; left: 0; right: 0; padding: 5px; border: 1px solid #dfe7df; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px #24332118; }
+.chat-composer > .ai-command-menu { bottom: calc(100% + 7px); }
+.search-section > .ai-command-menu { top: calc(100% + 7px); }
+.ai-command-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 0; border-radius: 6px; background: #eef5ef; color: #315d45; text-align: left; cursor: pointer; font: inherit; font-size: 12px; }
+.ai-command-menu .ai-command-chip { align-self: center; }
+.ai-command-menu kbd { margin-left: auto; color: #819083; }
 .global-search-hit { display: grid; gap: 4px; width: 100%; padding: 8px 10px; border: 1px solid #dfe7df; border-radius: 9px; background: #fff; color: #344638; text-align: left; cursor: pointer; }
 .global-search-hit:hover { border-color: #91ad96; background: #f7faf7; }
 .global-search-hit strong { font-size: 12px; }
