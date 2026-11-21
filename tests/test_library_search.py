@@ -35,6 +35,33 @@ class FakeEmbedder:
 
 
 class LibrarySearchTests(unittest.TestCase):
+    def test_person_with_title_matches_separate_signature_and_decision_pages(self):
+        for signature in ("Nguyễn Xuân Phúc\n\nTHỦ TƯỚNG", "NGUYỄN  XUÂN\nPHÚC\nTHỦ TƯỚNG"):
+            with self.subTest(signature=signature), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                rows = []
+                for document_id, pages in {
+                    "decision": ["Số: 81/QĐ-TTg\nQUYẾT ĐỊNH phê duyệt Chương trình hỗ trợ pháp lý.", signature],
+                    "unrelated": ["QUYẾT ĐỊNH khác. Thủ tướng Nguyễn Tấn Dũng đã ký."],
+                    "partial-name": ["QUYẾT ĐỊNH khác. Nguyễn Xuân PhúcAnh."],
+                }.items():
+                    paths = []
+                    for number, content in enumerate(pages):
+                        path = root / f"{document_id}-{number}.md"
+                        path.write_text(content, encoding="utf-8")
+                        paths.append(str(path))
+                    rows.append({"document_id": document_id, "display_name": document_id,
+                                 "index_status": "failed", "digitized_page_paths": paths})
+                client = FakeClient(json.dumps({"terms": ["quyết định"],
+                    "entities": ["Thủ Tướng Nguyễn Xuân Phúc"], "dates": [], "identifiers": []}))
+                service = LibrarySearchService(FakeRepository(rows), FakeIndex([]), FakeEmbedder(),
+                                               client, storage_root=root)
+
+                result = service.search_library("Thủ Tướng Nguyễn Xuân Phúc đã ký những quyết định nào ?")
+
+                self.assertEqual({item.document_id for item in result.results}, {"decision"})
+                self.assertEqual({item.page_number for item in result.results}, {1, 2})
+
     def test_extraction_preserves_only_question_facts_and_falls_back_on_invalid_json(self):
         client = FakeClient(json.dumps({"terms": ["bổ nhiệm"], "entities": ["Nguyễn Văn A"],
                                         "dates": ["2020"], "identifiers": []}, ensure_ascii=False))

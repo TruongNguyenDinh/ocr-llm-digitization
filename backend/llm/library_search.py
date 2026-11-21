@@ -25,6 +25,30 @@ _EXTRACTION_SCHEMA = {
     "required": ["terms", "entities", "dates", "identifiers"],
 }
 _CAPITALIZED_PHRASE = re.compile(r"\b[A-ZÀ-ÖØ-ÞĐ][^\W\d_]*(?:\s+[A-ZÀ-ÖØ-ÞĐ][^\W\d_]*)+\b")
+_PERSON_TITLE_PREFIX = re.compile(
+    r"^(?:ong|ba|thu tuong|pho thu tuong|chu tich nuoc|chu tich|pho chu tich|"
+    r"tong bi thu|bi thu|bo truong|thu truong|giam doc|pho giam doc|"
+    r"giao su|pho giao su|tien si|bac si)\s+"
+)
+
+
+def _entity_pattern(entity: str) -> re.Pattern[str]:
+    """Match a full entity or its name without leading personal titles.
+
+    A signature may put the title on a separate line after the name, while
+    query extraction includes it before the name. Never drop arbitrary name
+    tokens: unrelated people sharing a surname must remain excluded.
+    """
+    normalized = " ".join(_normalize(entity).split())
+    variants = [normalized]
+    name = normalized
+    while True:
+        stripped = _PERSON_TITLE_PREFIX.sub("", name, count=1)
+        if stripped == name or len(stripped.split()) < 2:
+            break
+        variants.append(stripped)
+        name = stripped
+    return re.compile(r"(?<!\w)(?:" + "|".join(re.escape(value) for value in variants) + r")(?!\w)")
 
 
 @dataclass(frozen=True)
@@ -145,12 +169,12 @@ class LibrarySearchService:
         # If the question names a person, organization, or place, keep retrieval
         # inside documents that actually mention that entity. This prevents
         # common words such as "phải" and "chịu" from surfacing unrelated files.
-        normalized_entities = [_normalize(value) for value in extracted.entities if value.strip()]
+        entity_patterns = [_entity_pattern(value) for value in extracted.entities if value.strip()]
         entity_documents: set[str] = set()
-        if normalized_entities:
+        if entity_patterns:
             for document_id, row in documents.items():
-                full_text = _normalize("\n".join(self._read_pages(row)))
-                if any(entity in full_text for entity in normalized_entities):
+                full_text = " ".join(_normalize("\n".join(self._read_pages(row))).split())
+                if any(pattern.search(full_text) for pattern in entity_patterns):
                     entity_documents.add(document_id)
             documents = {key: row for key, row in documents.items() if key in entity_documents}
 
@@ -184,7 +208,8 @@ class LibrarySearchService:
         for document_id, passage in all_passages:
             passage_terms = _terms(passage.text)
             overlap = query_terms & passage_terms
-            entity_hits = sum(entity in _normalize(passage.text) for entity in normalized_entities)
+            normalized_passage = " ".join(_normalize(passage.text).split())
+            entity_hits = sum(bool(pattern.search(normalized_passage)) for pattern in entity_patterns)
             if not overlap and not entity_hits:
                 continue
             lexical_score = sum(math.log(1 + passage_count / (1 + frequencies[term]))
