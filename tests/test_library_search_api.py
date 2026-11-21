@@ -12,7 +12,7 @@ from backend.api.library import router as library_router
 
 
 class LibrarySearchApiTests(unittest.TestCase):
-    def test_search_returns_unique_documents_without_generating_answer(self):
+    def test_search_returns_short_ai_reply_and_unique_document_links(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path = root / "page.md"
@@ -26,16 +26,19 @@ class LibrarySearchApiTests(unittest.TestCase):
             with patch("backend.api.library_search._get_service", return_value=indexer), \
                     patch("backend.api.library_search.OllamaClient") as client:
                 client.return_value.model = "qwen-test"
-                client.return_value.chat.return_value = '{"terms":["bổ nhiệm"],"entities":[],"dates":[],"identifiers":[]}'
+                client.return_value.chat.side_effect = [
+                    '{"terms":["bổ nhiệm"],"entities":[],"dates":[],"identifiers":[]}',
+                    'Mình tìm thấy tài liệu liên quan đến việc bổ nhiệm. Bạn mở tài liệu bên dưới để xem chi tiết.',
+                ]
                 response = self.client.post("/api/library/search-ai", json={"question": "bổ nhiệm"})
-                self.assertEqual(client.return_value.chat.call_count, 1)
+                self.assertEqual(client.return_value.chat.call_count, 2)
             self.assertEqual(response.status_code, 200, response.text)
             payload = response.json()
             self.assertEqual(payload["total"], 1)
             self.assertEqual([item["document_id"] for item in payload["results"]], ["doc-1"])
             self.assertEqual(payload["results"][0]["snippet"], "")
             self.assertEqual(payload["citations"], [])
-            self.assertEqual(payload["answer"], "")
+            self.assertEqual(payload["answer"], 'Mình tìm thấy tài liệu liên quan đến việc bổ nhiệm. Bạn mở tài liệu bên dưới để xem chi tiết.')
 
     def setUp(self):
         self.app = FastAPI()

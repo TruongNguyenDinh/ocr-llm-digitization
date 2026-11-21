@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.api.indexing import _get_service
-from backend.llm.library_search import LibrarySearchService
+from backend.llm.library_search import LibrarySearchService, introduce_library_results
 from backend.llm.ollama_client import OllamaClient, OllamaError
 
 
@@ -29,7 +29,7 @@ def run_library_search(question: str, page: int = 0, page_size: int = 20) -> dic
         storage_root=indexer.storage_root)
     search_page = searcher.search_library(question, page, page_size, documents_only=True)
     return {
-        "answer": "" if search_page.total else "Chưa tìm thấy tài liệu phù hợp.",
+        "answer": introduce_library_results(question, search_page.total, model),
         "model": model.model,
         "extracted_terms": {
             "terms": search_page.extracted_terms.terms,
