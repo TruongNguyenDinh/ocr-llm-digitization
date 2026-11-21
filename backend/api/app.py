@@ -16,12 +16,14 @@ from pathlib import Path, PurePosixPath
 from threading import RLock
 from typing import Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from backend.api.library import router as library_router
+from backend.api.indexing import router as indexing_router, schedule_document_index, start_startup_backfill
+from backend.api.library_search import router as library_search_router
 from backend.api.review_source import render_source_page
 from backend.api.jobs import OCRJob, TERMINAL_STATUSES, job_store
 from backend.api.system_status import read_system_status
@@ -149,6 +151,7 @@ def _remove_incomplete_output(document_name: str) -> None:
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    start_startup_backfill()
     yield
     with _process_lock:
         job_ids = list(_job_futures)
@@ -159,6 +162,8 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(title="OCR Upload API", version="1.0.0", lifespan=_lifespan)
 app.include_router(library_router)
+app.include_router(indexing_router)
+app.include_router(library_search_router)
 allowed_origins = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -557,7 +562,8 @@ def get_review_original_page(review_id: str, page_id: str) -> Response:
 
 
 @app.post("/api/llm/reviews/{review_id}/finalize")
-def finalize_llm_review(review_id: str, request: FinalizeReviewRequest) -> dict[str, object]:
+def finalize_llm_review(review_id: str, request: FinalizeReviewRequest,
+                        background_tasks: BackgroundTasks = None) -> dict[str, object]:
     try:
         draft = load_review_draft(review_id, output_root=OUTPUT_ROOT)
     except FileNotFoundError as exc:
@@ -588,7 +594,7 @@ def finalize_llm_review(review_id: str, request: FinalizeReviewRequest) -> dict[
 
     user_id = os.environ.get("DIGITIZATION_USER_ID", "local_user").strip() or "local_user"
     try:
-        return finalize_review(
+        result = finalize_review(
             review_id,
             user_id,
             approved_markdown,
@@ -599,6 +605,9 @@ def finalize_llm_review(review_id: str, request: FinalizeReviewRequest) -> dict[
             edit_log=[item.model_dump() for item in request.edit_log],
             display_name=request.display_name,
         )
+        if background_tasks is not None and result.get("document_id"):
+            background_tasks.add_task(schedule_document_index, str(result["document_id"]))
+        return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FileExistsError as exc:

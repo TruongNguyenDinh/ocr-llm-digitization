@@ -23,6 +23,7 @@ dist/
 
 data/
 storage/
+storage/vector_index/
 outputs/
 results/
 

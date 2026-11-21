@@ -4,8 +4,11 @@ import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
+import type { LibrarySearchHit } from '../services/llmApi'
+import { parseAICommand } from '../services/searchCommands'
 
 type Message = { role: 'user' | 'assistant'; content: string }
+type GlobalMessage = Message & { results?: LibrarySearchHit[]; total?: number; page?: number; pageSize?: number; question?: string }
 const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 const defaultContextLimit = 24000
 
@@ -17,7 +20,15 @@ function formatBytes(value: number): string {
   return `${Math.max(0, value).toLocaleString('vi-VN')} byte`
 }
 
-export function ChatPanel({ document }: { document: { id: string; name: string } | null }) {
+export function ChatPanel({ document, globalMessages = [], globalBusy = false, globalError, onGlobalSearch, onGlobalPage, onOpenCitation }: {
+  document: { id: string; name: string } | null
+  globalMessages?: GlobalMessage[]
+  globalBusy?: boolean
+  globalError?: string | null
+  onGlobalSearch?: (question: string) => void | Promise<void>
+  onGlobalPage?: (question: string, page: number) => void | Promise<void>
+  onOpenCitation?: (hit: LibrarySearchHit) => void
+}) {
   const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -53,9 +64,14 @@ export function ChatPanel({ document }: { document: { id: string; name: string }
   }, [messages, greeting, busy])
 
   async function send(text?: string) {
-    if (!document || busy) return
     const input = text?.trim()
-    if (!enabled || !input) return
+    if (!input) return
+    const globalQuery = parseAICommand(input)
+    if (globalQuery) {
+      if (!globalBusy) { setDraft(''); onGlobalSearch?.(globalQuery) }
+      return
+    }
+    if (!document || busy || !enabled) return
     const history: Message[] = [...messages, { role: 'user' as const, content: input }].slice(-40)
     if (input) setHasAsked(true)
     if (input) {
@@ -114,23 +130,38 @@ export function ChatPanel({ document }: { document: { id: string; name: string }
     </button>}
     <div className="chat-messages" ref={messagesContainer} role="log" aria-live="polite">
       {greeting && <article className="chat-message chat-assistant"><strong>Trợ Lý</strong><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{greeting}</ReactMarkdown></article>}
+      {globalMessages.map((message, index) => <article key={`global-${index}`} className={`chat-message chat-${message.role}`}>
+        <strong>{message.role === 'user' ? 'Bạn' : 'Trợ Lý'}</strong>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content}</ReactMarkdown>
+        {message.results?.length ? <div className="global-search-results" aria-label="Tài liệu tìm được">
+          {message.results.map((hit, hitIndex) => <button key={`${hit.document_id}-${hit.page_number}-${hitIndex}`} type="button" className="global-search-hit" onClick={() => onOpenCitation?.(hit)}>
+            <strong>{hit.document_name} · trang {hit.page_number}</strong><span>{hit.snippet}</span>
+          </button>)}
+          {message.total !== undefined && <small>{message.total} đoạn phù hợp</small>}
+          {message.pageSize && message.total && message.total > message.pageSize && message.question && <div className="global-search-pages">
+            <span>{(message.page ?? 0) + 1}/{Math.ceil(message.total / message.pageSize)}</span>
+            <button type="button" disabled={globalBusy || (message.page ?? 0) === 0} onClick={() => onGlobalPage?.(message.question!, (message.page ?? 0) - 1)}>Trước</button>
+            <button type="button" disabled={globalBusy || ((message.page ?? 0) + 1) * message.pageSize >= message.total} onClick={() => onGlobalPage?.(message.question!, (message.page ?? 0) + 1)}>Tiếp</button>
+          </div>}
+        </div> : null}
+      </article>)}
       {messages.map((message, index) => <article key={index} className={`chat-message chat-${message.role}`}>
         <strong>{message.role === 'user' ? 'Bạn' : 'Trợ Lý'}</strong>
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content}</ReactMarkdown>
       </article>)}
-      {busy && enabled && <article className="chat-message chat-assistant chat-typing" role="status"><strong>Trợ Lý</strong><span>Đang trả lời…</span></article>}
+      {(busy && enabled || globalBusy) && <article className="chat-message chat-assistant chat-typing" role="status"><strong>Trợ Lý</strong><span>Đang tìm trong thư viện…</span></article>}
     </div>
-    {error && <p role="alert" className="chat-error">{error}</p>}
-    {!hasAsked && <div className="chat-suggestions" aria-label="Gợi ý câu hỏi">
+    {(error || globalError) && <p role="alert" className="chat-error">{error || globalError}</p>}
+    {document && !hasAsked && <div className="chat-suggestions" aria-label="Gợi ý câu hỏi">
       {['Tóm tắt nội dung tài liệu', 'Tìm thông tin quan trọng'].map(text =>
         <button type="button" className="suggestion" key={text} disabled={!document || !enabled || busy} onClick={() => void send(text)}>{text} <span aria-hidden="true">↗</span></button>)}
     </div>}
     <form className="chat-composer" onSubmit={event => { event.preventDefault(); void send(draft) }}>
-      <textarea aria-label="Tin nhắn cho trợ lý" placeholder="Hỏi về tài liệu…" rows={2} value={draft}
-        disabled={!document || !enabled || busy} onChange={event => setDraft(event.target.value)}
+      <textarea aria-label="Tin nhắn cho trợ lý" placeholder={document ? 'Hỏi về tài liệu… hoặc nhập /AI: để tìm toàn thư viện' : 'Nhập /AI: để tìm trong thư viện…'} rows={2} value={draft}
+        disabled={busy || globalBusy} onChange={event => setDraft(event.target.value)}
         onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft) } }} />
       <div className="composer-footer"><span>Trợ Lý</span>
-        <button type="submit" className="send-button" aria-label="Gửi tin nhắn" disabled={!document || !enabled || busy || !draft.trim() || contextUsed > contextLimit}>↑</button>
+        <button type="submit" className="send-button" aria-label="Gửi tin nhắn" disabled={busy || globalBusy || !draft.trim() || (!parseAICommand(draft) && (!document || !enabled || contextUsed > contextLimit))}>↑</button>
       </div>
       <p className="chat-note">AI có thể mắc lỗi. Vui lòng kiểm tra lại thông tin.</p>
     </form>
