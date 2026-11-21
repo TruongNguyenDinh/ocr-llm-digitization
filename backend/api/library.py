@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from typing import Literal
 from backend.llm.document_chat import MAX_CHAT_CONTEXT_BYTES, chat_with_document
+from backend.api.library_search import run_library_search
 from backend.llm.ollama_client import OllamaError
 
 router = APIRouter(prefix="/api/library")
@@ -48,6 +49,18 @@ def document_chat(document_id: str, request: DocumentChatRequest):
     if request.messages and (request.messages[0].role != 'user' or request.messages[-1].role != 'user'
             or any(message.role != ('user' if index % 2 == 0 else 'assistant') for index, message in enumerate(request.messages))):
         raise HTTPException(422, 'Lịch sử chat không hợp lệ.')
+    if request.messages and request.messages[-1].content.lstrip().lower().startswith('/ai:'):
+        question = request.messages[-1].content.lstrip()[4:].strip()
+        if not question:
+            raise HTTPException(422, 'Sau /AI: hãy nhập câu hỏi cần tìm.')
+        try:
+            return run_library_search(question)
+        except OllamaError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, 'Không thể tìm kiếm thư viện lúc này.') from exc
     pages = [safe_file(filename).read_text(encoding='utf-8') for filename in json.loads(row['digitized_page_paths'])]
     try:
         messages = [item.model_dump() for item in request.messages]

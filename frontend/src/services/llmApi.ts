@@ -3,6 +3,35 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 export type LlmProvider = 'gemini' | 'qwen'
 export type ReviewSource = 'ocr' | 'llm'
 
+export type LibrarySearchHit = {
+  document_id: string
+  document_name: string
+  page_number: number
+  snippet: string
+  score: number
+}
+
+export type LibrarySearchResponse = {
+  answer: string
+  model: string
+  extracted_terms: { terms: string[]; entities: string[]; dates: string[]; identifiers: string[] }
+  citations: LibrarySearchHit[]
+  results: LibrarySearchHit[]
+  page: number
+  page_size: number
+  total: number
+  context_used_bytes: number
+  index_status: Record<string, number>
+}
+
+export async function searchLibraryAI(question: string, page = 0, pageSize = 20, signal?: AbortSignal): Promise<LibrarySearchResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/library/search-ai`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, page, page_size: pageSize }), signal,
+  })
+  return readResponse<LibrarySearchResponse>(response)
+}
+
 export type MarkdownChange = {
   before_start?: number
   before_end?: number

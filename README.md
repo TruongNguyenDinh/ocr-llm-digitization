@@ -45,6 +45,11 @@ export GEMINI_API_KEY="<Gemini API key>"
 export GEMINI_MODEL="gemini-3.8-flash"
 export OLLAMA_BASE_URL="http://localhost:11434"
 export OLLAMA_MODEL="qwen3:8b"
+export OLLAMA_EMBEDDING_MODEL="embeddinggemma"
+# Kích thước vector của model embeddinggemma là 768; chỉ đổi khi model yêu cầu kích thước khác.
+# export OLLAMA_EMBEDDING_DIMENSIONS="768"
+# Ngưỡng tương đồng vector (mặc định 0.35).
+# export OLLAMA_VECTOR_SCORE_THRESHOLD="0.35"
 # Tùy chọn: mặc định không giới hạn; đặt số giây để bật giới hạn chờ Ollama.
 # export OLLAMA_TIMEOUT_SECONDS="600"
 export DIGITIZATION_USER_ID="local_user"
@@ -54,5 +59,18 @@ export DIGITIZATION_USER_ID="local_user"
 
 Gemini client tự retry tối đa ba lần cho các lỗi HTTP tạm thời (`429`, `500`, `502`, `503`, `504`), có backoff và tôn trọng `Retry-After`.
 Thời gian chờ mỗi phản hồi mặc định là 300 giây; có thể điều chỉnh bằng `GEMINI_TIMEOUT_SECONDS`.
+
+### Tìm kiếm toàn thư viện bằng AI
+
+Tìm kiếm từ khóa thông thường vẫn tra tên và nội dung tài liệu đã lưu. Nhập `/AI: câu hỏi` trong ô tìm kiếm Dashboard hoặc khung chat để Ollama trích xuất từ khóa, tạo embedding, tìm các đoạn liên quan và trả lời dựa trên tài liệu đã duyệt. Chọn một kết quả trong chat để mở tài liệu tại đúng trang. Kết quả được phân trang và có thể duyệt tiếp.
+
+Cài model embedding một lần và giữ Ollama chạy khi dùng tìm kiếm AI:
+
+```bash
+ollama pull qwen3:8b
+ollama pull embeddinggemma
+```
+
+Chỉ mục vector Qdrant local được lưu trong `storage/vector_index/`; SQLite và các tệp Markdown đã duyệt vẫn là dữ liệu chuẩn. Tài liệu được đưa vào chỉ mục sau khi lưu thành công. Khi API khởi động, hệ thống tự lập chỉ mục bù cho tài liệu cũ hoặc các lần trước bị lỗi. API trạng thái là `GET /api/library/index-status`; để thử lập chỉ mục lại các tài liệu còn pending/failed, gọi `POST /api/library/reindex`. Nếu thay model embedding hoặc kích thước vector, đặt `OLLAMA_EMBEDDING_MODEL` và `OLLAMA_EMBEDDING_DIMENSIONS` trước, rồi gọi `POST /api/library/reindex?rebuild=true`; thao tác này xóa và dựng lại toàn bộ chỉ mục từ tài liệu đã lưu. Theo dõi tiến độ qua `GET /api/library/index-status`. Chỉ chạy một tiến trình backend trên cùng thư mục dữ liệu Qdrant local tại một thời điểm.
 
 Khi hiệu đính xong, cửa sổ duyệt cuối hiển thị OCR và LLM cạnh nhau, cuộn đồng bộ và highlight các sửa của model. Nút **Edit** cho phép sửa văn bản; thay đổi được đồng bộ sang đoạn tương ứng ở cột kia và ghi vào audit log. Cú pháp Markdown, bảng, tiêu đề, công thức, thứ tự khối và hình ảnh được giữ theo đầu ra OCR. **Save with OCR output** hoặc **Save with LLM output** lập tức lưu bản chọn vào `storage/digitization/` cùng bản gốc PDF và `edit_log.json`. **Cancel** đóng cửa sổ, giữ review ở trạng thái chờ để mở lại sau.

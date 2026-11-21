@@ -26,9 +26,10 @@ type DocumentViewerProps = {
   documentName: string | null
   error: string | null
   showViewTabs?: boolean
+  targetPage?: number
 }
 
-export function DocumentViewer({ file, status, pages, totalPages, documentName, error, storedDocument, showViewTabs = true }: DocumentViewerProps) {
+export function DocumentViewer({ file, status, pages, totalPages, documentName, error, storedDocument, showViewTabs = true, targetPage }: DocumentViewerProps) {
   const [manualTab, setManualTab] = useState<{ file: File | null; tab: (typeof tabs)[number]['id'] } | null>(null)
   const [preview, setPreview] = useState<{ file: File; url: string } | null>(null)
   const [showHighlights, setShowHighlights] = useState(true)
@@ -49,6 +50,14 @@ export function DocumentViewer({ file, status, pages, totalPages, documentName, 
       URL.revokeObjectURL(url)
     }
   }, [file])
+
+  useEffect(() => {
+    if (targetPage === undefined || !pages.some(page => page.page_number === targetPage)) return
+    const frame = window.requestAnimationFrame(() => {
+      window.document.querySelector<HTMLElement>(`.markdown-page[data-page-number="${targetPage}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [targetPage, pages])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -148,7 +157,7 @@ export function DocumentViewer({ file, status, pages, totalPages, documentName, 
             {status === 'failed' && <div className="partial-warning" role="status">OCR hoàn tất {pages.length}/{totalPages ?? '—'} trang trước khi dừng. {error}</div>}
             {pages.map((page) => {
               const marked = page as OcrPage & { llm_changes?: MarkdownChange[]; manual_changes?: MarkdownChange[] }
-              return <article className="markdown-page" key={page.page_number}>
+              return <article className="markdown-page" data-page-number={page.page_number} key={page.page_number}>
                 <div className="markdown-page-label">TRANG {page.page_number}</div>
                 <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeSanitize, ...(showHighlights && storedDocument ? [rehypeHighlights(marked.llm_changes ?? [], marked.manual_changes ?? [])] : []), rehypeKatex]} urlTransform={resolveMarkdownUrl}>{page.markdown}</ReactMarkdown>
               </article>

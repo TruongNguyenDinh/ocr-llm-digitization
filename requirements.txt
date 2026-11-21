@@ -1,6 +1,7 @@
 paddleocr[doc-parser]
 pypdf
 Pillow
+qdrant-client
 pypdfium2
 fastapi
 uvicorn[standard]
