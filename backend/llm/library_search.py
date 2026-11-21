@@ -157,7 +157,8 @@ class LibrarySearchService:
                 pages.append("")
         return pages
 
-    def search_library(self, question: str, page: int = 0, page_size: int = 20) -> SearchPage:
+    def search_library(self, question: str, page: int = 0, page_size: int = 20,
+                       *, documents_only: bool = False) -> SearchPage:
         extracted = extract_search_query(question, self.extraction_client)
         rows = self.repository.list_finalized_documents()
         documents = {str(row["document_id"]): row for row in rows}
@@ -254,6 +255,13 @@ class LibrarySearchService:
             results.append(SearchResult(document_id, str(name), page_number, text,
                                         vector_score + lexical_score))
         results.sort(key=lambda item: (-item.score, item.document_name.casefold(), item.page_number))
+        if documents_only:
+            unique: dict[str, SearchResult] = {}
+            for result in results:
+                if result.document_id not in unique:
+                    unique[result.document_id] = SearchResult(result.document_id, result.document_name,
+                                                             1, "", result.score)
+            results = list(unique.values())
         page = max(0, page)
         page_size = max(1, page_size)
         start = page * page_size

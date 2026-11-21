@@ -1,4 +1,7 @@
 import unittest
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -9,6 +12,31 @@ from backend.api.library import router as library_router
 
 
 class LibrarySearchApiTests(unittest.TestCase):
+    def test_search_returns_unique_documents_without_generating_answer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "page.md"
+            path.write_text("Bổ nhiệm ông A.\n\nQuyết định bổ nhiệm.", encoding="utf-8")
+            indexer = SimpleNamespace(storage_root=root, embedder=None,
+                vector_index=SimpleNamespace(count=lambda: 0),
+                repository=SimpleNamespace(
+                    list_finalized_documents=lambda: [{"document_id": "doc-1", "display_name": "Quyết định",
+                        "digitized_page_paths": [str(path)], "index_status": "failed"}],
+                    get_index_status=lambda: {"failed": 1}))
+            with patch("backend.api.library_search._get_service", return_value=indexer), \
+                    patch("backend.api.library_search.OllamaClient") as client:
+                client.return_value.model = "qwen-test"
+                client.return_value.chat.return_value = '{"terms":["bổ nhiệm"],"entities":[],"dates":[],"identifiers":[]}'
+                response = self.client.post("/api/library/search-ai", json={"question": "bổ nhiệm"})
+                self.assertEqual(client.return_value.chat.call_count, 1)
+            self.assertEqual(response.status_code, 200, response.text)
+            payload = response.json()
+            self.assertEqual(payload["total"], 1)
+            self.assertEqual([item["document_id"] for item in payload["results"]], ["doc-1"])
+            self.assertEqual(payload["results"][0]["snippet"], "")
+            self.assertEqual(payload["citations"], [])
+            self.assertEqual(payload["answer"], "")
+
     def setUp(self):
         self.app = FastAPI()
         self.app.include_router(router)

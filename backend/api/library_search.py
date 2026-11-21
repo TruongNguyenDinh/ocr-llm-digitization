@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.api.indexing import _get_service
-from backend.llm.library_search import LibrarySearchService, answer_library_question
+from backend.llm.library_search import LibrarySearchService
 from backend.llm.ollama_client import OllamaClient, OllamaError
 
 
@@ -27,23 +27,22 @@ def run_library_search(question: str, page: int = 0, page_size: int = 20) -> dic
     searcher = LibrarySearchService(
         indexer.repository, indexer.vector_index, indexer.embedder, model,
         storage_root=indexer.storage_root)
-    search_page = searcher.search_library(question, page, page_size)
-    grounded = answer_library_question(question, search_page.results, model)
+    search_page = searcher.search_library(question, page, page_size, documents_only=True)
     return {
-        "answer": grounded.answer,
-        "model": grounded.model,
+        "answer": "" if search_page.total else "Chưa tìm thấy tài liệu phù hợp.",
+        "model": model.model,
         "extracted_terms": {
             "terms": search_page.extracted_terms.terms,
             "entities": search_page.extracted_terms.entities,
             "dates": search_page.extracted_terms.dates,
             "identifiers": search_page.extracted_terms.identifiers,
         },
-        "citations": [asdict(item) for item in grounded.citations],
+        "citations": [],
         "results": [asdict(item) for item in search_page.results],
         "page": search_page.page,
         "page_size": search_page.page_size,
         "total": search_page.total,
-        "context_used_bytes": grounded.context_used_bytes,
+        "context_used_bytes": 0,
         "index_status": indexer.repository.get_index_status(),
     }
 

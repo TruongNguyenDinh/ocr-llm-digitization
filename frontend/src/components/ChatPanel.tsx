@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
 import type { LibrarySearchHit } from '../services/llmApi'
-import { hasAICommand, parseAICommand } from '../services/searchCommands'
+import { hasAICommand, parseAICommand, suggestsAICommand } from '../services/searchCommands'
+import { AICommandSuggestion } from './AICommandSuggestion'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 type GlobalMessage = Message & { results?: LibrarySearchHit[]; total?: number; page?: number; pageSize?: number; question?: string }
@@ -33,6 +34,8 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
+  const [inputFocused, setInputFocused] = useState(false)
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [greeting, setGreeting] = useState('')
   const [hasAsked, setHasAsked] = useState(false)
@@ -46,7 +49,9 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
   const contextPercent = Math.min(100, contextUsed / contextLimit * 100)
   const contextStatus = contextUsed > contextLimit ? 'exhausted' : contextRemaining < contextLimit * 0.15 ? 'near' : 'ok'
   const aiCommandActive = hasAICommand(draft)
-  const composerText = aiCommandActive ? draft.replace(/^@ai\s*:\s*/i, '') : draft
+  const composerText = aiCommandActive ? draft.trimStart().replace(/^@ai\s*:\s*/i, '') : draft
+  const showAIOption = inputFocused && !suggestionDismissed && suggestsAICommand(draft)
+  function selectAICommand() { setDraft('@AI: '); setSuggestionDismissed(true) }
 
   useEffect(() => {
     setEnabled(false)
@@ -63,12 +68,13 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
   useEffect(() => {
     const container = messagesContainer.current
     if (container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-  }, [messages, greeting, busy])
+  }, [messages, greeting, busy, globalMessages, globalBusy])
 
   async function send(text?: string) {
     const input = text?.trim()
     if (!input) return
     const globalQuery = parseAICommand(input)
+    if (hasAICommand(input) && !globalQuery) return
     if (globalQuery) {
       if (!globalBusy) { setDraft(''); onGlobalSearch?.(globalQuery) }
       return
@@ -136,10 +142,13 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
         <strong>{message.role === 'user' ? 'Bạn' : 'Trợ Lý'}</strong>
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content}</ReactMarkdown>
         {message.results?.length ? <div className="global-search-results" aria-label="Tài liệu tìm được">
-          {message.results.map((hit, hitIndex) => <button key={`${hit.document_id}-${hit.page_number}-${hitIndex}`} type="button" className="global-search-hit" onClick={() => onOpenCitation?.(hit)}>
-            <strong>{hit.document_name} · trang {hit.page_number}</strong><span>{hit.snippet}</span>
-          </button>)}
-          {message.total !== undefined && <small>{message.total} đoạn phù hợp</small>}
+          {message.results.map(hit => <a key={hit.document_id} href={`?document=${encodeURIComponent(hit.document_id)}`} className="global-document-link" onClick={event => {
+            if (onOpenCitation && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+              event.preventDefault(); onOpenCitation(hit)
+            }
+          }}>
+            <span aria-hidden="true">▤</span><span>{hit.document_name}</span><span aria-hidden="true">↗</span>
+          </a>)}
           {message.pageSize && message.total && message.total > message.pageSize && message.question && <div className="global-search-pages">
             <span>{(message.page ?? 0) + 1}/{Math.ceil(message.total / message.pageSize)}</span>
             <button type="button" disabled={globalBusy || (message.page ?? 0) === 0} onClick={() => onGlobalPage?.(message.question!, (message.page ?? 0) - 1)}>Trước</button>
@@ -159,17 +168,23 @@ export function ChatPanel({ document, globalMessages = [], globalBusy = false, g
         <button type="button" className="suggestion" key={text} disabled={!document || !enabled || busy} onClick={() => void send(text)}>{text} <span aria-hidden="true">↗</span></button>)}
     </div>}
     <form className="chat-composer" onSubmit={event => { event.preventDefault(); void send(draft) }}>
+      {showAIOption && <AICommandSuggestion id="chat-ai-options" onSelect={selectAICommand} />}
       <div className="chat-input-row">
         {aiCommandActive && <span className="ai-command-chip" aria-label="Tìm toàn thư viện bằng AI">@AI</span>}
         <textarea aria-label="Tin nhắn cho trợ lý" placeholder={document ? 'Hỏi về tài liệu… hoặc nhập @AI: để tìm toàn thư viện' : 'Nhập @AI: để tìm trong thư viện…'} rows={2} value={composerText}
-          disabled={busy || globalBusy} onChange={event => setDraft(aiCommandActive ? (event.target.value ? `@AI: ${event.target.value}` : '@AI:') : event.target.value)}
+          aria-controls={showAIOption ? 'chat-ai-options' : undefined}
+          onFocus={() => setInputFocused(true)} onBlur={() => setInputFocused(false)}
+          disabled={busy || globalBusy} onChange={event => { setSuggestionDismissed(false); setDraft(aiCommandActive ? (event.target.value ? `@AI: ${event.target.value}` : '@AI:') : event.target.value) }}
           onKeyDown={event => {
+            if (event.nativeEvent.isComposing) return
+            if (showAIOption && ['Enter', 'Tab', 'ArrowDown'].includes(event.key)) { event.preventDefault(); selectAICommand(); return }
+            if (showAIOption && event.key === 'Escape') { event.preventDefault(); setSuggestionDismissed(true); return }
             if (aiCommandActive && !composerText && event.key === 'Backspace') { event.preventDefault(); setDraft(''); return }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft) }
           }} />
       </div>
       <div className="composer-footer"><span>Trợ Lý</span>
-        <button type="submit" className="send-button" aria-label="Gửi tin nhắn" disabled={busy || globalBusy || !draft.trim() || (!parseAICommand(draft) && (!document || !enabled || contextUsed > contextLimit))}>↑</button>
+        <button type="submit" className="send-button" aria-label="Gửi tin nhắn" disabled={busy || globalBusy || !draft.trim() || (aiCommandActive ? !parseAICommand(draft) : (!document || !enabled || contextUsed > contextLimit))}>↑</button>
       </div>
       <p className="chat-note">AI có thể mắc lỗi. Vui lòng kiểm tra lại thông tin.</p>
     </form>

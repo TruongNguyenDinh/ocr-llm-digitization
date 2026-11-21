@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ChatPanel } from '../components/ChatPanel'
 import { DocumentViewer } from '../components/DocumentViewer'
 import type { OcrPage } from '../services/ocrApi'
-import { hasAICommand, parseAICommand } from '../services/searchCommands'
+import { hasAICommand, parseAICommand, suggestsAICommand } from '../services/searchCommands'
+import { AICommandSuggestion } from '../components/AICommandSuggestion'
 import { searchLibraryAI, type LibrarySearchHit } from '../services/llmApi'
 
 const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '') + '/api/library'
@@ -17,6 +18,7 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
 }) {
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false)
   const searchSection = useRef<HTMLElement>(null)
   const [offset, setOffset] = useState(0)
   const [items, setItems] = useState<Item[]>([])
@@ -32,7 +34,9 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [targetPage, setTargetPage] = useState<number | undefined>()
   const aiCommandActive = hasAICommand(query)
-  const searchText = aiCommandActive ? query.replace(/^@ai\s*:\s*/i, '') : query
+  const searchText = aiCommandActive ? query.trimStart().replace(/^@ai\s*:\s*/i, '') : query
+  const showAIOption = searchOpen && !suggestionDismissed && suggestsAICommand(query)
+  function selectAICommand() { setQuery('@AI: '); setSuggestionDismissed(true); setSearchOpen(true) }
   async function askLibrary(question: string, page = 0, includeQuestion = page === 0) {
     if (globalBusy) return
     if (includeQuestion) setGlobalMessages(messages => [...messages, { role: 'user', content: question }])
@@ -55,7 +59,7 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
     if (selectedDocumentId) setSelected(selectedDocumentId)
   }, [selectedDocumentId])
   useEffect(() => {
-    if (!active || parseAICommand(query)) return
+    if (!active || hasAICommand(query) || suggestsAICommand(query)) return
     const controller = new AbortController()
     setLoading(true)
     setError(null)
@@ -99,16 +103,24 @@ export function DashboardPage({ active = true, selectedDocumentId = null, onDocu
         <form className="search-box" onSubmit={submitSearch}><span className="search-icon" aria-hidden="true" />
           {aiCommandActive && <span className="ai-command-chip" aria-label="Tìm toàn thư viện bằng AI">@AI</span>}
           <input type="search" placeholder={aiCommandActive ? 'Nhập nội dung cần tìm…' : 'Tên, danh mục… hoặc @AI: câu hỏi'} aria-label="Tìm kiếm tài liệu" value={searchText}
+            aria-controls={showAIOption ? 'search-ai-options' : undefined}
             onFocus={() => setSearchOpen(true)} onChange={e => {
+              setSuggestionDismissed(false)
               setQuery(aiCommandActive ? (e.target.value ? `@AI: ${e.target.value}` : '@AI:') : e.target.value)
               setOffset(0); setSearchOpen(true)
               if (parseAICommand(e.target.value) || aiCommandActive) setLoading(false)
             }}
-            onKeyDown={e => { if (aiCommandActive && !searchText && e.key === 'Backspace') { e.preventDefault(); setQuery('') } }} />
+            onKeyDown={e => {
+              if (e.nativeEvent.isComposing) return
+              if (showAIOption && ['Enter', 'Tab', 'ArrowDown'].includes(e.key)) { e.preventDefault(); selectAICommand(); return }
+              if (e.key === 'Escape') { e.preventDefault(); setSuggestionDismissed(true); setSearchOpen(false); return }
+              if (aiCommandActive && !searchText && e.key === 'Backspace') { e.preventDefault(); setQuery('') }
+            }} />
           {parseAICommand(query) && <button type="submit" aria-label="Tìm bằng Trợ Lý">AI</button>}
         </form>
-        {searchOpen && <div className="library-popover" role="region" aria-label="Kết quả tài liệu">
-          {parseAICommand(query) ? <p>Nhấn Enter hoặc AI để tìm trong nội dung bằng Trợ Lý.</p> : loading ? <p role="status">Đang tìm kiếm…</p> : error ? <p role="alert">{error}</p> : <>
+        {showAIOption && <AICommandSuggestion id="search-ai-options" onSelect={selectAICommand} />}
+        {searchOpen && !showAIOption && !suggestsAICommand(query) && <div className="library-popover" role="region" aria-label="Kết quả tài liệu">
+          {aiCommandActive ? <p>Nhập nội dung rồi nhấn Enter để tìm tài liệu.</p> : loading ? <p role="status">Đang tìm kiếm…</p> : error ? <p role="alert">{error}</p> : <>
             {!items.length && <p>{query ? 'Không tìm thấy tài liệu phù hợp.' : 'Chưa có tài liệu đã lưu. Hoàn tất duyệt và bấm Save để thêm vào thư viện.'}</p>}
             <div className="library-results">{items.map(item => <button type="button" key={item.document_id}
               className={selected === item.document_id ? 'library-result active' : 'library-result'}
