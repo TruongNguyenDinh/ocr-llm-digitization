@@ -88,3 +88,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Isolated development worktrees
+.worktrees/
